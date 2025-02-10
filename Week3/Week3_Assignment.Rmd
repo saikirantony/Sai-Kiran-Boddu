@@ -1,0 +1,103 @@
+---
+title: "Week3_Assignment"
+author: "saikiran"
+date: "2025-02-10"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+```{r cars}
+summary(cars)
+```
+
+## Including Plots
+
+You can also embed plots, for example:
+
+```{r pressure, echo=FALSE}
+plot(pressure)
+```
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
+
+
+
+```{r}
+install.packages("geosphere")
+install.packages("microbenchmark")
+library(geosphere)
+library(microbenchmark)
+```
+
+```{r}
+# Load the data
+file_path <- "~/Downloads/clinics.xls"
+library(readxl)
+clinic_data <- read_excel(file_path)
+
+# Display the first few rows to verify data loading
+print(head(clinic_data))
+
+```
+
+
+```{r}
+# Ensure latitude and longitude columns are numeric
+clinic_data$locLat <- as.numeric(clinic_data$locLat)
+clinic_data$locLong <- as.numeric(clinic_data$locLong)
+
+# Haversine function to compute distances between coordinates
+haversine <- function(lat1, lon1, lat2, lon2) {
+  geosphere::distHaversine(c(lon1, lat1), c(lon2, lat2))
+}
+
+# Test function usage
+test_distance <- haversine(40.671, -73.985, clinic_data$locLat[1], clinic_data$locLong[1])
+print(paste("Distance to first clinic:", test_distance, "meters"))
+```
+
+```{r}
+# Distance Computation Using For-Loop
+
+compute_distances_loop <- function(data) {
+  distances <- numeric(nrow(data))
+  for (i in 1:nrow(data)) {
+    distances[i] <- haversine(40.671, -73.985, data$locLat[i], data$locLong[i])
+  }
+  return(distances)
+}
+
+# Profile the for-loop execution time
+system.time({
+  clinic_data$distance_loop <- compute_distances_loop(clinic_data)
+})
+```
+
+```{r}
+# Efficient Approach Using apply()
+system.time({
+  clinic_data$distance_apply <- apply(clinic_data, 1, function(row) {
+    haversine(40.671, -73.985, as.numeric(row["locLat"]), as.numeric(row["locLong"]))
+  })
+})
+```
+
+```{r}
+# Fully Vectorized Approach
+
+system.time({
+  clinic_data$distance_vectorized <- mapply(function(lat, long) {
+    haversine(40.671, -73.985, lat, long)
+  }, clinic_data$locLat, clinic_data$locLong)
+})
+```
+
