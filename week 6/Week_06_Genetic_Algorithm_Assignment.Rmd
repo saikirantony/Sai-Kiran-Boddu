@@ -1,0 +1,160 @@
+---
+title: "Week_06_Genetic_Algorithm_Assignment"
+author: "saikiran"
+date: "2025-03-03"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+```{r}
+# Load required libraries
+library(data.table)
+library(geosphere)
+library(GA)
+library(purrr)
+library(sf)
+```
+
+```{r}
+# Load population data
+population_data <- fread("Mo_pop_Sim.csv")
+str(population_data)
+
+# Sample 0.01% of the population data
+sampling_fraction <- 0.0001
+sample_population <- population_data[sample(1:nrow(population_data), size = round(nrow(population_data) * sampling_fraction), replace = FALSE), ]
+
+```
+```{r}
+# Load Federally Qualified Health Center (FQHC) data
+fqhc_data <- st_read("~/Desktop/week6Assigment/MO_2018_Federally_Qualified_Health_Center_Locations.shp")
+fqhc_locations <- data.table(
+  ID = 1:nrow(fqhc_data),
+  Longitude = fqhc_data$Longitude,
+  Latitude = fqhc_data$Latitude,
+  Facility_Name = fqhc_data$Facility,
+  Facility_Group = fqhc_data$Group_Name
+)
+
+```
+```{r}
+# Function to calculate average distance (accessibility) for each FQHC
+calculate_average_distance <- function() {
+  avg_distances <- numeric(nrow(fqhc_locations))
+
+  for (i in 1:nrow(fqhc_locations)) {
+    fqhc_coordinates <- c(fqhc_locations$Longitude[i], fqhc_locations$Latitude[i])
+    distances <- distHaversine(
+      matrix(c(sample_population$long, sample_population$lat), ncol = 2),
+      matrix(rep(fqhc_coordinates, each = nrow(sample_population)), ncol = 2)
+    )
+    avg_distances[i] <- mean(distances)
+  }
+  
+  fqhc_locations[, avg_distance := avg_distances]
+  return(fqhc_locations)
+}
+
+```
+
+```{r}
+# Function to calculate population density within a 30-mile radius (48280 meters)
+calculate_population_density <- function() {
+  density_counts <- numeric(nrow(fqhc_locations))
+
+  for (i in 1:nrow(fqhc_locations)) {
+    fqhc_coordinates <- c(fqhc_locations$Longitude[i], fqhc_locations$Latitude[i])
+    distances <- distHaversine(
+      matrix(c(sample_population$long, sample_population$lat), ncol = 2),
+      matrix(rep(fqhc_coordinates, each = nrow(sample_population)), ncol = 2)
+    )
+    density_counts[i] <- sum(distances <= 48280)  # Count points within 30 miles
+  }
+
+  fqhc_locations[, population_density := density_counts * (1 / sampling_fraction)]
+  return(fqhc_locations)
+}
+
+```
+
+```{r}
+# Calculate the metrics for all FQHC locations
+fqhc_locations <- calculate_average_distance()
+fqhc_locations <- calculate_population_density()
+
+```
+
+```{r}
+# Rank FQHCs by accessibility (average distance)
+top_accessible <- fqhc_locations[order(avg_distance)][1:8]
+print(top_accessible[, .(ID, Facility_Name, avg_distance)])
+
+```
+
+```{r}
+# Rank FQHCs by population density
+top_populated <- fqhc_locations[order(-population_density)][1:8]
+print(top_populated[, .(ID, Facility_Name, Facility_Group, population_density)])
+
+```
+
+```{r}
+# Combined ranking by both metrics: Access and Population Density
+fqhc_locations[, access_rank := rank(avg_distance)]
+fqhc_locations[, density_rank := rank(-population_density)]
+fqhc_locations[, combined_rank := access_rank + density_rank]
+
+top_combined_fqhc <- fqhc_locations[order(combined_rank)][1:8]
+print(top_combined_fqhc[, .(ID, Facility_Name, Facility_Group, combined_rank, avg_distance, population_density)])
+
+```
+
+```{r}
+# Genetic Algorithm: Fitness function
+fitness_function <- function(selection) {
+  selected_fqhc <- fqhc_locations[selection == 1, ]
+
+  # Compute the total combined score for selected FQHCs
+  total_combined_score <- sum(selected_fqhc$combined_rank)
+
+  # We want to minimize the combined score
+  return(-total_combined_score)
+}
+
+```
+
+```{r}
+# Run the Genetic Algorithm to optimize FQHC location selection
+set.seed(123)
+genetic_algorithm <- ga(
+  type = "binary",
+  fitness = fitness_function,
+  nBits = nrow(fqhc_locations),
+  popSize = 50,
+  maxiter = 100,
+  pmutation = 0.1,
+  elitism = 2
+)
+
+```
+
+```{r}
+# Extract the best solution
+best_solution <- as.logical(genetic_algorithm@solution[1, ])
+optimal_fqhc <- fqhc_locations[best_solution, ]
+
+# Print the optimal FQHC locations based on Genetic Algorithm optimization
+print(optimal_fqhc[, .(ID, Facility_Name, Facility_Group, combined_rank, avg_distance, population_density)])
+
+```
+
+Conclusion
+
+The genetic algorithm optimization through its evaluation method discovered eight Federally Qualified Health Centers (FQHCs) which proved suitable for specialized mental health service implementation. Accessibility and population density were the main factors in the selection process through which a fitness function determined facility placement. The function measured both aspects by examining residence distance and population distribution within 30 miles.
+
+The selected FQHCs include COMTREA Byrnes Mill Health Center and Access Family Care - Anderson (Dental) which provide optimal service areas near residents and population concentration zones. The optimization strategy determines these specific locations because they maximize mental health service accessibility and population coverage throughout Missouri.
